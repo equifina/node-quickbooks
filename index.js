@@ -6,8 +6,7 @@
  * @copyright 2014 Michael Cohen
  */
 
-var request   = require('request'),
-    uuid      = require('uuid'),
+var uuid      = require('uuid'),
     debug     = require('request-debug'),
     util      = require('util'),
     formatISO = require('date-fns/fp/formatISO'),
@@ -37,30 +36,28 @@ var OAUTH_ENDPOINTS = {
 
   '2.0': function (callback, discoveryUrl) {
     var NEW_ENDPOINT_CONFIGURATION = {};
-    request({
-      url: discoveryUrl,
+    fetch(discoveryUrl, {
       headers: {
         Accept: 'application/json'
       }
-    }, function (err, res) {
-      if (err) {
+    })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Network response was not ok' + response.statusText);
+        }
+        return response.json();
+      })
+      .then(json => {
+        NEW_ENDPOINT_CONFIGURATION.AUTHORIZATION_URL = json.authorization_endpoint;
+        NEW_ENDPOINT_CONFIGURATION.TOKEN_URL = json.token_endpoint;
+        NEW_ENDPOINT_CONFIGURATION.USER_INFO_URL = json.userinfo_endpoint;
+        NEW_ENDPOINT_CONFIGURATION.REVOKE_URL = json.revocation_endpoint;
+        callback(NEW_ENDPOINT_CONFIGURATION);
+      })
+      .catch(err => {
         console.log(err);
         return err;
-      }
-
-      var json;
-      try {
-          json = JSON.parse(res.body);
-      } catch (error) {
-          console.log(error);
-          return error;
-      }
-      NEW_ENDPOINT_CONFIGURATION.AUTHORIZATION_URL = json.authorization_endpoint;;
-      NEW_ENDPOINT_CONFIGURATION.TOKEN_URL = json.token_endpoint;
-      NEW_ENDPOINT_CONFIGURATION.USER_INFO_URL = json.userinfo_endpoint;
-      NEW_ENDPOINT_CONFIGURATION.REVOKE_URL = json.revocation_endpoint;
-      callback(NEW_ENDPOINT_CONFIGURATION);
-    });
+      });
   }
 };
 
@@ -127,32 +124,43 @@ function QuickBooks(consumerKey, consumerSecret, token, tokenSecret, realmId, us
  */
 
 QuickBooks.prototype.refreshAccessToken = function(callback) {
-    var auth = (Buffer.from(this.consumerKey + ':' + this.consumerSecret).toString('base64'));
+    const auth = Buffer.from(this.consumerKey + ':' + this.consumerSecret).toString('base64');
 
-    var postBody = {
-        url: QuickBooks.TOKEN_URL,
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Authorization: 'Basic ' + auth,
-        },
-        form: {
-            grant_type: 'refresh_token',
-            refresh_token: this.refreshToken
-        }
+    const url = QuickBooks.TOKEN_URL;
+    const headers = {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: 'Basic ' + auth,
     };
 
-    request.post(postBody, (function (e, r, data) {
-        if (r && r.body && r.error!=="invalid_grant") {
-            var refreshResponse = JSON.parse(r.body);
-            this.refreshToken = refreshResponse.refresh_token;
-            this.token = refreshResponse.access_token;
-            if (callback) callback(e, refreshResponse);
+    const body = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: this.refreshToken
+    });
+
+    fetch(url, {
+        method: 'POST',
+        headers: headers,
+        body: body
+    })
+    .then(response => response.json().then(data => ({
+        status: response.status,
+        body: data
+    })))
+    .then(({ status, body }) => {
+        if (status === 200 && body && body.error !== "invalid_grant") {
+            this.refreshToken = body.refresh_token;
+            this.token = body.access_token;
+            if (callback) callback(null, body);
         } else {
-            if (callback) callback(e, r, data);
+            if (callback) callback(null, { status, body }, null);
         }
-    }).bind(this));
+    })
+    .catch(e => {
+        if (callback) callback(e, null, null);
+    });
 };
+
 
 /**
  * Use either refresh token or access token to revoke access (OAuth2).
@@ -161,29 +169,42 @@ QuickBooks.prototype.refreshAccessToken = function(callback) {
  * @param {function} callback - Callback function to call with error/response/data results.
  */
 QuickBooks.prototype.revokeAccess = function(useRefresh, callback) {
-    var auth = (Buffer.from(this.consumerKey + ':' + this.consumerSecret).toString('base64'));
-    var revokeToken = useRefresh ? this.refreshToken : this.token;
-    var postBody = {
-        url: QuickBooks.REVOKE_URL,
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Authorization: 'Basic ' + auth,
-        },
-        form: {
-            token: revokeToken
-        }
+    const auth = Buffer.from(this.consumerKey + ':' + this.consumerSecret).toString('base64');
+    const revokeToken = useRefresh ? this.refreshToken : this.token;
+
+    const url = QuickBooks.REVOKE_URL;
+    const headers = {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: 'Basic ' + auth,
     };
 
-    request.post(postBody, (function(e, r, data) {
-        if (r && r.statusCode === 200) {
+    const body = new URLSearchParams({
+        token: revokeToken
+    });
+
+    fetch(url, {
+        method: 'POST',
+        headers: headers,
+        body: body
+    })
+    .then(response => response.json().then(data => ({
+        status: response.status,
+        body: data
+    })))
+    .then(({ status }) => {
+        if (status === 200) {
             this.refreshToken = null;
             this.token = null;
             this.realmId = null;
         }
-        if (callback) callback(e, r, data);
-    }).bind(this));
+        if (callback) callback(null, { status });
+    })
+    .catch(e => {
+        if (callback) callback(e, null, null);
+    });
 };
+
 
 /**
  * Get user info (OAuth2).
