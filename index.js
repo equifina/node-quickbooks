@@ -2397,30 +2397,41 @@ module.request = function(context, verb, options, entity, callback) {
   if (options.formData) {
     opts.formData = options.formData
   }
-  if ('production' !== process.env.NODE_ENV && context.debug) {
-    debug(request)
-  }
+  // if ('production' !== process.env.NODE_ENV && context.debug) {
+  //   debug(request)
+  // }
+  // request[verb].call(context, opts, function (err, res, body) {
+  //   if ('production' !== process.env.NODE_ENV && context.debug) {
+  //     console.log('invoking endpoint: ' + url)
+  //     console.log(entity || '')
+  //     console.log(JSON.stringify(body, null, 2));
+  //   }
+  //   if (callback) {
+  //     if (err ||
+  //         res.statusCode >= 300 ||
+  //         (_.isObject(body) && body.Fault && body.Fault.Error && body.Fault.Error.length) ||
+  //         (_.isString(body) && !_.isEmpty(body) && body.indexOf('<') === 0)) {
+  //       callback(err || body, body, res)
+  //     } else {
+  //       callback(null, body, res)
+  //     }
+  //   }
+  // })
+
 
   fetch(opts.url, {
     method: verb,
-    headers: opts.headers,
-    body: opts.body,
+    headers: opts.body ? {...opts.headers, "content-type": "application/json"} : opts.headers,
+    body: opts.body && JSON.stringify(opts.body),
   })
-  .then(response => response.json().then(body => ({ response, body })))
-  .then(({ response, body }) => {
-    if (process.env.NODE_ENV !== 'production' && context.debug) {
-      console.log('invoking endpoint: ' + opts.url);
-      console.log(opts.entity || '');
-      console.log(JSON.stringify(body, null, 2));
-    }
-
+  .then((response) => {
     if (callback) {
       if (!response.ok ||
-          (typeof body === 'object' && body.Fault && body.Fault.Error && body.Fault.Error.length) ||
-          (typeof body === 'string' && body.startsWith('<'))) {
-        callback(new Error('Request failed'), body, response);
+          (typeof response.body === 'object' && response.body.Fault && response.body.Fault.Error && response.body.Fault.Error.length) ||
+          (typeof response.body === 'string' && response.body.startsWith('<'))) {
+        callback(new Error('Request failed'), response.body, response);
       } else {
-        callback(null, body, response);
+        callback(null, response.body, response);
       }
     }
   })
