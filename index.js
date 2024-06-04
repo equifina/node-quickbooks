@@ -2400,23 +2400,35 @@ module.request = function(context, verb, options, entity, callback) {
   if ('production' !== process.env.NODE_ENV && context.debug) {
     debug(request)
   }
-  request[verb].call(context, opts, function (err, res, body) {
-    if ('production' !== process.env.NODE_ENV && context.debug) {
-      console.log('invoking endpoint: ' + url)
-      console.log(entity || '')
+
+  fetch(opts.url, {
+    method: verb,
+    headers: opts.headers,
+    body: opts.body,
+  })
+  .then(response => response.json().then(body => ({ response, body })))
+  .then(({ response, body }) => {
+    if (process.env.NODE_ENV !== 'production' && context.debug) {
+      console.log('invoking endpoint: ' + opts.url);
+      console.log(opts.entity || '');
       console.log(JSON.stringify(body, null, 2));
     }
+
     if (callback) {
-      if (err ||
-          res.statusCode >= 300 ||
-          (_.isObject(body) && body.Fault && body.Fault.Error && body.Fault.Error.length) ||
-          (_.isString(body) && !_.isEmpty(body) && body.indexOf('<') === 0)) {
-        callback(err || body, body, res)
+      if (!response.ok ||
+          (typeof body === 'object' && body.Fault && body.Fault.Error && body.Fault.Error.length) ||
+          (typeof body === 'string' && body.startsWith('<'))) {
+        callback(new Error('Request failed'), body, response);
       } else {
-        callback(null, body, res)
+        callback(null, body, response);
       }
     }
   })
+  .catch(err => {
+    if (callback) {
+      callback(err, null, null);
+    }
+  });
 }
 
 module.xmlRequest = function(context, url, rootTag, callback) {
