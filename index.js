@@ -7,7 +7,7 @@
  * @copyright 2014 Michael Cohen
  */
 
- var uuid      = require('uuid'),
+ var uuid  = require('uuid'),
  debug     = require('request-debug'),
  util      = require('util'),
  formatISO = require('date-fns/fp/formatISO'),
@@ -15,8 +15,6 @@
  Promise   = require('bluebird'),
  version   = require('./package.json').version,
  xmlParser = new (require('fast-xml-parser').XMLParser)();
-
-//  const FormData = require('form-data');
 
 module.exports = QuickBooks
 
